@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import BrandSettings from './components/BrandSettings'
 
 const API = import.meta.env.VITE_BACKEND_URL || ''
 
@@ -30,22 +31,35 @@ function applyTheme(theme) {
   })
 }
 
+function hexToRgb(hex) {
+  const c = hex.replace('#','')
+  const bigint = parseInt(c.length===3 ? c.split('').map(x=>x+x).join('') : c, 16)
+  return { r: (bigint>>16)&255, g: (bigint>>8)&255, b: bigint&255 }
+}
+function relativeLuminance({r,g,b}) {
+  const srgb = [r,g,b].map(v=>v/255).map(v=> v<=0.03928 ? v/12.92 : Math.pow((v+0.055)/1.055, 2.4))
+  return 0.2126*srgb[0] + 0.7152*srgb[1] + 0.0722*srgb[2]
+}
+
 function getTheme(client) {
-  // Derive a simple palette from a primary color or use electrician-nottingham inspired defaults
+  // Derive a palette from brand color with simple contrast-aware text color
   const primary = client?.theme_color || '#facc15' // electric yellow
-  // Supporting tones
   const brand900 = '#0b1220' // deep slate/navy
   const brand800 = '#0f172a'
   const brand700 = '#1f2937'
   const brand50 = '#f8fafc'
-
+  let textOnBrand = '#111827'
+  try {
+    const lum = relativeLuminance(hexToRgb(primary))
+    textOnBrand = lum > 0.6 ? '#0b1220' : '#f8fafc'
+  } catch {}
   return {
     brand: primary,
     brand900,
     brand800,
     brand700,
     brand50,
-    textOnBrand: '#111827',
+    textOnBrand,
   }
 }
 
@@ -94,7 +108,11 @@ function ClientsList({ onOpen }) {
         {data?.map(c => (
           <button key={c.id} onClick={() => onOpen(c)} className="text-left rounded-lg border p-4 hover:shadow transition bg-white/80">
             <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-full ring-2" style={{ background: c.theme_color || 'var(--brand50)', boxShadow: 'inset 0 0 0 2px rgba(0,0,0,0.05)' }} />
+              {c.logo_url ? (
+                <img src={c.logo_url} alt={c.display_name} className="h-10 w-10 rounded-full object-contain bg-white ring-2 p-1" style={{borderColor:'rgba(0,0,0,0.05)'}} />
+              ) : (
+                <div className="h-10 w-10 rounded-full ring-2" style={{ background: c.theme_color || 'var(--brand50)', boxShadow: 'inset 0 0 0 2px rgba(0,0,0,0.05)' }} />
+              )}
               <div>
                 <div className="font-medium">{c.display_name}</div>
                 <div className="text-xs text-gray-500">{c.notes || 'No notes yet'}</div>
@@ -107,7 +125,7 @@ function ClientsList({ onOpen }) {
   )
 }
 
-function ClientPortal({ me, client, onBack }) {
+function ClientPortal({ me, client, onBack, onRefresh }) {
   const [tab, setTab] = useState('chat')
   const [message, setMessage] = useState('')
 
@@ -165,23 +183,36 @@ function ClientPortal({ me, client, onBack }) {
 
   const color = client.theme_color || 'var(--brand)'
 
+  const refreshClient = async () => {
+    const res = await fetch(`${API}/clients/${client.id}`)
+    const updated = await res.json()
+    onRefresh && onRefresh(updated)
+  }
+
+  const tabs = ['chat','documents','invoices','work','quotes']
+  if (me.role === 'admin') tabs.push('brand')
+
   return (
     <div>
       <div className="flex items-center gap-4 mb-6">
         <button onClick={onBack} className="text-sm underline opacity-70 hover:opacity-100">Back</button>
-        <div className="h-9 w-9 rounded-full ring-2" style={{ background: color }} />
+        {client.logo_url ? (
+          <img src={client.logo_url} alt={client.display_name} className="h-9 w-9 rounded-full object-contain bg-white ring-2 p-1" />
+        ) : (
+          <div className="h-9 w-9 rounded-full ring-2" style={{ background: color }} />
+        )}
         <div>
           <div className="text-xl font-semibold">{client.display_name}</div>
-          <div className="text-xs text-gray-500">Personalized portal</div>
+          <div className="text-xs text-gray-400">Personalized portal</div>
         </div>
       </div>
 
       <div className="flex gap-2 mb-4">
-        {['chat','documents','invoices','work','quotes'].map(t => (
+        {tabs.map(t => (
           <button
             key={t}
             onClick={() => setTab(t)}
-            className={`px-3 py-1 rounded-full border transition`}
+            className={`px-3 py-1 rounded-full border transition capitalize`}
             style={{
               background: tab===t ? 'var(--brand)' : 'rgba(255,255,255,0.85)',
               color: tab===t ? 'var(--textOnBrand)' : '#111827',
@@ -296,6 +327,30 @@ function ClientPortal({ me, client, onBack }) {
             </ul>
           </div>
           <QuoteForm client={client} onDone={quotes.reload} workList={work.data||[]} />
+        </div>
+      )}
+
+      {tab==='brand' && me.role==='admin' && (
+        <div className="grid md:grid-cols-3 gap-6">
+          <div className="md:col-span-2 rounded-lg p-4 border" style={{background:'rgba(255,255,255,0.9)'}}>
+            <h3 className="font-medium mb-3">Brand settings</h3>
+            <p className="text-sm text-gray-600 mb-4">Upload or link a logo and pick the brand colour to theme this portal.</p>
+            <BrandSettings client={client} onUpdated={async()=>{ await refreshClient(); }} />
+          </div>
+          <div className="rounded-lg p-4 border" style={{background:'rgba(255,255,255,0.9)'}}>
+            <h3 className="font-medium mb-2">Live preview</h3>
+            <div className="rounded-lg p-4 border" style={{background:'linear-gradient(135deg, rgba(255,255,255,0.95), rgba(255,255,255,0.85))'}}>
+              <div className="flex items-center gap-3 mb-3">
+                {client.logo_url ? (
+                  <img src={client.logo_url} alt="logo" className="h-8 w-8 rounded object-contain bg-white ring-1 p-1" />
+                ) : (
+                  <div className="h-8 w-8 rounded-full" style={{background: color}} />
+                )}
+                <div className="font-medium">{client.display_name}</div>
+              </div>
+              <button className="px-3 py-2 rounded text-white" style={{background:'var(--brand)'}}>Primary action</button>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -431,7 +486,7 @@ export default function App() {
           </div>
         ) : (
           <section className="rounded-xl border p-6" style={{background:'rgba(15,23,42,0.6)', borderColor:'rgba(255,255,255,0.06)'}}>
-            <ClientPortal me={me} client={activeClient} onBack={() => setActiveClient(null)} />
+            <ClientPortal me={me} client={activeClient} onBack={() => setActiveClient(null)} onRefresh={(c)=>setActiveClient(c)} />
           </section>
         )}
       </main>
