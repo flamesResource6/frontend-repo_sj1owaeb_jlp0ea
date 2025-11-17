@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import BrandSettings from './components/BrandSettings'
+import KanbanBoard from './components/KanbanBoard'
 
 const API = import.meta.env.VITE_BACKEND_URL || ''
 
@@ -43,7 +44,7 @@ function relativeLuminance({r,g,b}) {
 
 function getTheme(client) {
   // Derive a palette from brand color with simple contrast-aware text color
-  const primary = client?.theme_color || '#facc15' // electric yellow
+  const primary = client?.theme_color || '#32CD32' // construction lime
   const brand900 = '#0b1220' // deep slate/navy
   const brand800 = '#0f172a'
   const brand700 = '#1f2937'
@@ -67,8 +68,40 @@ function Login({ onLogin }) {
   const [email, setEmail] = useState('admin@example.com')
   const [name, setName] = useState('Admin')
   const [role, setRole] = useState('admin')
+  const [useOtp, setUseOtp] = useState(true)
+  const [otpSent, setOtpSent] = useState(false)
+  const [code, setCode] = useState('')
+  const [message, setMessage] = useState('')
 
-  const submit = async e => {
+  const requestCode = async (e) => {
+    e.preventDefault()
+    setMessage('')
+    const res = await fetch(`${API}/auth/request-otp`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, name, role })
+    })
+    const json = await res.json()
+    if (res.ok) {
+      setOtpSent(true)
+      setMessage('A verification code was sent to your email. (In this demo, it is logged on the server)')
+    } else {
+      setMessage(json?.detail || 'Failed to send code')
+    }
+  }
+
+  const verifyCode = async (e) => {
+    e.preventDefault()
+    setMessage('')
+    const res = await fetch(`${API}/auth/verify-otp`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, code })
+    })
+    const json = await res.json()
+    if (json.token) onLogin(json)
+    else setMessage(json?.detail || 'Invalid code')
+  }
+
+  const passwordLogin = async e => {
     e.preventDefault()
     const res = await fetch(`${API}/auth/login`, {
       method: 'POST',
@@ -82,16 +115,42 @@ function Login({ onLogin }) {
   return (
     <div className="max-w-md w-full space-y-4">
       <h1 className="text-3xl font-bold" style={{color:'var(--brand)'}}>Sign in</h1>
-      <form onSubmit={submit} className="space-y-3">
-        <input className="w-full border px-3 py-2 rounded bg-white/80" placeholder="Email" value={email} onChange={e=>setEmail(e.target.value)} />
-        <input className="w-full border px-3 py-2 rounded bg-white/80" placeholder="Name" value={name} onChange={e=>setName(e.target.value)} />
-        <select className="w-full border px-3 py-2 rounded bg-white/80" value={role} onChange={e=>setRole(e.target.value)}>
-          <option value="admin">Admin</option>
-          <option value="client">Client</option>
-        </select>
-        <button className="w-full text-white py-2 rounded font-medium shadow" style={{background:'var(--brand)'}}>Continue</button>
-      </form>
-      <p className="text-xs text-gray-500">Tip: use a client role to preview the client-facing theme.</p>
+      {useOtp ? (
+        <form onSubmit={otpSent ? verifyCode : requestCode} className="space-y-3">
+          <input className="w-full border px-3 py-2 rounded bg-white/80" placeholder="Email" value={email} onChange={e=>setEmail(e.target.value)} />
+          {!otpSent && (
+            <>
+              <input className="w-full border px-3 py-2 rounded bg-white/80" placeholder="Name" value={name} onChange={e=>setName(e.target.value)} />
+              <select className="w-full border px-3 py-2 rounded bg-white/80" value={role} onChange={e=>setRole(e.target.value)}>
+                <option value="admin">Admin</option>
+                <option value="project_manager">Project Manager</option>
+                <option value="client">Client</option>
+                <option value="viewer">Viewer</option>
+              </select>
+            </>
+          )}
+          {otpSent && (
+            <input className="w-full border px-3 py-2 rounded bg-white/80" placeholder="Enter verification code" value={code} onChange={e=>setCode(e.target.value)} />
+          )}
+          <button className="w-full text-white py-2 rounded font-medium shadow" style={{background:'var(--brand)'}}>{otpSent ? 'Verify code' : 'Send code'}</button>
+          {message && <div className="text-xs text-gray-600">{message}</div>}
+          <button type="button" onClick={()=>{setUseOtp(false)}} className="text-xs underline block opacity-80">Use basic demo login instead</button>
+        </form>
+      ) : (
+        <form onSubmit={passwordLogin} className="space-y-3">
+          <input className="w-full border px-3 py-2 rounded bg-white/80" placeholder="Email" value={email} onChange={e=>setEmail(e.target.value)} />
+          <input className="w-full border px-3 py-2 rounded bg-white/80" placeholder="Name" value={name} onChange={e=>setName(e.target.value)} />
+          <select className="w-full border px-3 py-2 rounded bg-white/80" value={role} onChange={e=>setRole(e.target.value)}>
+            <option value="admin">Admin</option>
+            <option value="project_manager">Project Manager</option>
+            <option value="client">Client</option>
+            <option value="viewer">Viewer</option>
+          </select>
+          <button className="w-full text-white py-2 rounded font-medium shadow" style={{background:'var(--brand)'}}>Continue</button>
+          <button type="button" onClick={()=>{setUseOtp(true)}} className="text-xs underline block opacity-80">Use email code login</button>
+        </form>
+      )}
+      <p className="text-xs text-gray-500">Tip: choose roles to preview different access. Admins can manage branding and projects.</p>
     </div>
   )
 }
@@ -126,7 +185,7 @@ function ClientsList({ onOpen }) {
 }
 
 function ClientPortal({ me, client, onBack, onRefresh }) {
-  const [tab, setTab] = useState('chat')
+  const [tab, setTab] = useState('kanban')
   const [message, setMessage] = useState('')
 
   // Apply theme whenever client changes
@@ -189,7 +248,7 @@ function ClientPortal({ me, client, onBack, onRefresh }) {
     onRefresh && onRefresh(updated)
   }
 
-  const tabs = ['chat','documents','invoices','work','quotes']
+  const tabs = ['kanban','chat','documents','invoices','work','quotes']
   if (me.role === 'admin') tabs.push('brand')
 
   return (
@@ -207,20 +266,29 @@ function ClientPortal({ me, client, onBack, onRefresh }) {
         </div>
       </div>
 
-      <div className="flex gap-2 mb-4">
+      <div className="flex gap-2 mb-4 flex-wrap">
         {tabs.map(t => (
           <button
             key={t}
             onClick={() => setTab(t)}
-            className={`px-3 py-1 rounded-full border transition capitalize`}
+            className={`px-3 py-1.5 rounded-full border transition capitalize flex items-center gap-2`}
             style={{
               background: tab===t ? 'var(--brand)' : 'rgba(255,255,255,0.85)',
               color: tab===t ? 'var(--textOnBrand)' : '#111827',
               borderColor: 'rgba(0,0,0,0.08)'
             }}
-          >{t}</button>
+          >
+            <span className="inline-block" style={{fontSize:24}}>{t==='kanban'?'🛠️':t==='documents'?'📄':t==='invoices'?'💳':t==='work'?'📋':t==='quotes'?'💬':t==='brand'?'🎨':'💬'}</span>
+            {t}
+          </button>
         ))}
       </div>
+
+      {tab==='kanban' && (
+        <div className="rounded-lg p-4 border" style={{background:'rgba(255,255,255,0.9)'}}>
+          <KanbanBoard client={client} currentUser={me} />
+        </div>
+      )}
 
       {tab==='chat' && (
         <div className="grid md:grid-cols-3 gap-6">
@@ -436,7 +504,7 @@ export default function App() {
   })
   const [activeClient, setActiveClient] = useState(null)
 
-  // Apply global theme on first load (electrician-nottingham style)
+  // Apply global theme on first load (construction lime by default)
   useEffect(() => {
     if (!activeClient) applyTheme(getTheme(null))
   }, [activeClient])
@@ -448,7 +516,7 @@ export default function App() {
   if (!session) {
     return (
       <div className="min-h-screen flex items-center justify-center p-6" style={{
-        background: 'radial-gradient(1200px 600px at 10% -10%, rgba(250,204,21,0.10), transparent), radial-gradient(1000px 500px at 110% 10%, rgba(250,204,21,0.06), transparent), linear-gradient(180deg, var(--brand800, #0f172a), var(--brand900, #0b1220))'
+        background: 'radial-gradient(1200px 600px at 10% -10%, rgba(50,205,50,0.10), transparent), radial-gradient(1000px 500px at 110% 10%, rgba(50,205,50,0.06), transparent), linear-gradient(180deg, var(--brand800, #0f172a), var(--brand900, #0b1220))'
       }}>
         <Login onLogin={setSession} />
       </div>
@@ -459,13 +527,13 @@ export default function App() {
 
   return (
     <div className="min-h-screen" style={{
-      background: 'radial-gradient(1200px 600px at -10% -10%, rgba(250,204,21,0.08), transparent), radial-gradient(1000px 500px at 120% 0%, rgba(250,204,21,0.05), transparent), linear-gradient(180deg, var(--brand800, #0f172a), var(--brand900, #0b1220))'
+      background: 'radial-gradient(1200px 600px at -10% -10%, rgba(50,205,50,0.08), transparent), radial-gradient(1000px 500px at 120% 0%, rgba(50,205,50,0.05), transparent), linear-gradient(180deg, var(--brand800, #0f172a), var(--brand900, #0b1220))'
     }}>
       <header className="border-b/0" style={{background:'rgba(15,23,42,0.7)', backdropFilter:'saturate(140%) blur(8px)'}}>
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="font-semibold text-white tracking-wide flex items-center gap-3">
             <span className="inline-block h-6 w-6 rounded-sm" style={{background:'var(--brand)'}} />
-            <span>Electrician Nottingham Client Portal</span>
+            <span>Construction Client Portal</span>
           </div>
           <div className="flex items-center gap-3">
             <span className="text-sm text-gray-200">{me?.name}</span>
