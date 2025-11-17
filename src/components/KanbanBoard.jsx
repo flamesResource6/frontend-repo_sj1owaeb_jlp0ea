@@ -9,6 +9,17 @@ const STATUS_COLUMNS = [
   { key: 'completed', label: 'Completed' },
 ]
 
+function getRole() {
+  try {
+    const s = localStorage.getItem('session')
+    if (!s) return 'viewer'
+    const json = JSON.parse(s)
+    return json?.user?.role || 'viewer'
+  } catch {
+    return 'viewer'
+  }
+}
+
 function useTasks(clientId, { search, assignee } = {}) {
   const query = useMemo(() => {
     const q = new URLSearchParams({ client_id: clientId })
@@ -73,6 +84,19 @@ export default function KanbanBoard({ client, currentUser }) {
   const [assignee, setAssignee] = useState('')
   const { data: allTasks, loading, reload } = useTasks(client.id, { search, assignee })
   const dragging = useRef(null)
+  const role = getRole()
+
+  // Realtime updates via WebSocket
+  useEffect(() => {
+    if (!client?.id) return
+    const wsBase = API.replace('https://', 'wss://').replace('http://', 'ws://')
+    const ws = new WebSocket(`${wsBase}/ws/kanban/${client.id}`)
+    ws.onmessage = () => {
+      reload()
+    }
+    ws.onerror = () => {}
+    return () => { try { ws.close() } catch {} }
+  }, [client?.id])
 
   const grouped = useMemo(() => {
     const by = { todo: [], in_progress: [], under_review: [], completed: [] }
@@ -96,7 +120,7 @@ export default function KanbanBoard({ client, currentUser }) {
     const before_id = null
     const after_id = col.length ? col[col.length - 1].id : null
     await fetch(`${API}/kanban/tasks/${t.id}/move`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-User-Role': role },
       body: JSON.stringify({ to_status: status, before_id, after_id })
     })
     dragging.current = null
@@ -116,7 +140,7 @@ export default function KanbanBoard({ client, currentUser }) {
     const due_date = form.due_date.value ? new Date(form.due_date.value).toISOString() : null
     const assignees = form.assignees.value ? form.assignees.value.split(',').map(s=>s.trim()).filter(Boolean) : []
     await fetch(`${API}/kanban/tasks`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-User-Role': role },
       body: JSON.stringify({ client_id: client.id, title, description, due_date, assignees })
     })
     form.reset()
@@ -125,6 +149,8 @@ export default function KanbanBoard({ client, currentUser }) {
 
   const brand = getComputedStyle(document.documentElement).getPropertyValue('--brand')?.trim() || '#32CD32'
 
+  const canEdit = role === 'admin' || role === 'project_manager'
+
   return (
     <div className="space-y-4">
       <div className="flex flex-col md:flex-row md:items-center gap-3">
@@ -132,18 +158,20 @@ export default function KanbanBoard({ client, currentUser }) {
           <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search tasks" className="w-full border rounded px-3 py-2 bg-white/90" />
           <input value={assignee} onChange={e=>setAssignee(e.target.value)} placeholder="Filter by assignee id" className="w-64 border rounded px-3 py-2 bg-white/90" />
         </div>
-        <form onSubmit={createTask} className="grid grid-cols-5 gap-2">
-          <input name="title" required placeholder="Task title" className="col-span-2 border rounded px-3 py-2 bg-white/90" />
-          <input name="description" placeholder="Description" className="col-span-2 border rounded px-3 py-2 bg-white/90" />
-          <button className="col-span-1 rounded text-white font-medium" style={{background: brand}}>Add</button>
-          <input name="due_date" type="date" className="col-span-2 border rounded px-3 py-2 bg-white/90" />
-          <input name="assignees" placeholder="assignee ids (comma separated)" className="col-span-3 border rounded px-3 py-2 bg-white/90" />
-        </form>
+        {canEdit && (
+          <form onSubmit={createTask} className="grid grid-cols-5 gap-2">
+            <input name="title" required placeholder="Task title" className="col-span-2 border rounded px-3 py-2 bg-white/90" />
+            <input name="description" placeholder="Description" className="col-span-2 border rounded px-3 py-2 bg-white/90" />
+            <button className="col-span-1 rounded text-white font-medium" style={{background: brand}}>Add</button>
+            <input name="due_date" type="date" className="col-span-2 border rounded px-3 py-2 bg-white/90" />
+            <input name="assignees" placeholder="assignee ids (comma separated)" className="col-span-3 border rounded px-3 py-2 bg-white/90" />
+          </form>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         {STATUS_COLUMNS.map(col => (
-          <div key={col.key} className="rounded-lg border p-3 bg-white/80 min-h-[260px] flex flex-col" style={{borderColor:'rgba(0,0,0,0.08)'}} onDrop={(e)=>handleDrop(e, col.key)} onDragOver={allowDrop}>
+          <div key={col.key} className="rounded-lg border p-3 bg-white/80 min-h-[260px] flex flex-col" style={{borderColor:'rgba(0,0,0,0.08)'}} onDrop={canEdit ? (e)=>handleDrop(e, col.key) : undefined} onDragOver={canEdit ? (e)=>allowDrop(e) : undefined}>
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
                 <span className="inline-block h-2 w-2 rounded-full" style={{background: brand}} />
@@ -162,7 +190,7 @@ export default function KanbanBoard({ client, currentUser }) {
       </div>
 
       <div className="text-xs text-slate-500">
-        Tip: Drag a card to another column to update its status instantly.
+        {canEdit ? 'Tip: Drag a card to another column to update its status instantly.' : 'Read-only view. Project managers and admins can create and move tasks.'}
       </div>
     </div>
   )

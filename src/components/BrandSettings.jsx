@@ -2,12 +2,25 @@ import { useEffect, useState } from 'react'
 
 const API = import.meta.env.VITE_BACKEND_URL || ''
 
+function getRole() {
+  try {
+    const s = localStorage.getItem('session')
+    if (!s) return 'viewer'
+    const json = JSON.parse(s)
+    return json?.user?.role || 'viewer'
+  } catch {
+    return 'viewer'
+  }
+}
+
 export default function BrandSettings({ client, onUpdated }) {
   const [display_name, setDisplayName] = useState(client.display_name || '')
   const [theme_color, setThemeColor] = useState(client.theme_color || '#4f46e5')
   const [logo_url, setLogoUrl] = useState(client.logo_url || '')
   const [notes, setNotes] = useState(client.notes || '')
   const [saving, setSaving] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const role = getRole()
 
   useEffect(() => {
     setDisplayName(client.display_name || '')
@@ -21,11 +34,30 @@ export default function BrandSettings({ client, onUpdated }) {
     setSaving(true)
     await fetch(`${API}/clients/${client.id}`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-User-Role': role },
       body: JSON.stringify({ display_name, theme_color, logo_url, notes })
     })
     setSaving(false)
     onUpdated && onUpdated()
+  }
+
+  const handleUpload = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    const fd = new FormData()
+    fd.append('file', file)
+    const res = await fetch(`${API}/clients/${client.id}/logo`, {
+      method: 'POST',
+      headers: { 'X-User-Role': role },
+      body: fd
+    })
+    const json = await res.json()
+    if (json?.url) {
+      setLogoUrl(json.url)
+      onUpdated && onUpdated()
+    }
+    setUploading(false)
   }
 
   return (
@@ -42,8 +74,12 @@ export default function BrandSettings({ client, onUpdated }) {
         </div>
       </div>
       <div>
-        <label className="block text-xs text-gray-400 mb-1">Logo URL</label>
-        <input value={logo_url} onChange={e=>setLogoUrl(e.target.value)} className="w-full border rounded px-3 py-2 bg-white/90" placeholder="https://.../logo.png" />
+        <label className="block text-xs text-gray-400 mb-1">Logo</label>
+        <input type="url" value={logo_url} onChange={e=>setLogoUrl(e.target.value)} className="w-full border rounded px-3 py-2 bg-white/90 mb-2" placeholder="https://.../logo.png" />
+        <div className="flex items-center gap-3">
+          <input type="file" accept="image/*" onChange={handleUpload} className="text-xs" />
+          {uploading && <span className="text-xs text-gray-500">Uploading...</span>}
+        </div>
         {logo_url && (
           <div className="mt-2">
             <img src={logo_url} alt="logo preview" className="h-12 object-contain bg-white rounded p-2" />
