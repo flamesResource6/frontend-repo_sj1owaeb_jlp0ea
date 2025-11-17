@@ -23,6 +23,32 @@ function useApi(path, params = null) {
   return { data, loading, reload: () => setData(null) }
 }
 
+function applyTheme(theme) {
+  const root = document.documentElement
+  Object.entries(theme).forEach(([k, v]) => {
+    root.style.setProperty(`--${k}`, v)
+  })
+}
+
+function getTheme(client) {
+  // Derive a simple palette from a primary color or use electrician-nottingham inspired defaults
+  const primary = client?.theme_color || '#facc15' // electric yellow
+  // Supporting tones
+  const brand900 = '#0b1220' // deep slate/navy
+  const brand800 = '#0f172a'
+  const brand700 = '#1f2937'
+  const brand50 = '#f8fafc'
+
+  return {
+    brand: primary,
+    brand900,
+    brand800,
+    brand700,
+    brand50,
+    textOnBrand: '#111827',
+  }
+}
+
 function Login({ onLogin }) {
   const [email, setEmail] = useState('admin@example.com')
   const [name, setName] = useState('Admin')
@@ -41,16 +67,17 @@ function Login({ onLogin }) {
 
   return (
     <div className="max-w-md w-full space-y-4">
-      <h1 className="text-2xl font-bold">Sign in</h1>
+      <h1 className="text-3xl font-bold" style={{color:'var(--brand)'}}>Sign in</h1>
       <form onSubmit={submit} className="space-y-3">
-        <input className="w-full border px-3 py-2 rounded" placeholder="Email" value={email} onChange={e=>setEmail(e.target.value)} />
-        <input className="w-full border px-3 py-2 rounded" placeholder="Name" value={name} onChange={e=>setName(e.target.value)} />
-        <select className="w-full border px-3 py-2 rounded" value={role} onChange={e=>setRole(e.target.value)}>
+        <input className="w-full border px-3 py-2 rounded bg-white/80" placeholder="Email" value={email} onChange={e=>setEmail(e.target.value)} />
+        <input className="w-full border px-3 py-2 rounded bg-white/80" placeholder="Name" value={name} onChange={e=>setName(e.target.value)} />
+        <select className="w-full border px-3 py-2 rounded bg-white/80" value={role} onChange={e=>setRole(e.target.value)}>
           <option value="admin">Admin</option>
           <option value="client">Client</option>
         </select>
-        <button className="w-full bg-blue-600 text-white py-2 rounded">Continue</button>
+        <button className="w-full text-white py-2 rounded font-medium shadow" style={{background:'var(--brand)'}}>Continue</button>
       </form>
+      <p className="text-xs text-gray-500">Tip: use a client role to preview the client-facing theme.</p>
     </div>
   )
 }
@@ -65,9 +92,9 @@ function ClientsList({ onOpen }) {
       </div>
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {data?.map(c => (
-          <button key={c.id} onClick={() => onOpen(c)} className="text-left bg-white rounded-lg border p-4 hover:shadow">
+          <button key={c.id} onClick={() => onOpen(c)} className="text-left rounded-lg border p-4 hover:shadow transition bg-white/80">
             <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-full" style={{ background: c.theme_color || '#e5e7eb' }} />
+              <div className="h-10 w-10 rounded-full ring-2" style={{ background: c.theme_color || 'var(--brand50)', boxShadow: 'inset 0 0 0 2px rgba(0,0,0,0.05)' }} />
               <div>
                 <div className="font-medium">{c.display_name}</div>
                 <div className="text-xs text-gray-500">{c.notes || 'No notes yet'}</div>
@@ -83,6 +110,11 @@ function ClientsList({ onOpen }) {
 function ClientPortal({ me, client, onBack }) {
   const [tab, setTab] = useState('chat')
   const [message, setMessage] = useState('')
+
+  // Apply theme whenever client changes
+  useEffect(() => {
+    applyTheme(getTheme(client))
+  }, [client])
 
   const messages = useApi('/messages', { client_id: client.id })
   const docs = useApi('/documents', { client_id: client.id })
@@ -131,13 +163,13 @@ function ClientPortal({ me, client, onBack }) {
     quotes.reload()
   }
 
-  const color = client.theme_color || '#4f46e5'
+  const color = client.theme_color || 'var(--brand)'
 
   return (
     <div>
-      <div className="flex items-center gap-3 mb-6">
-        <button onClick={onBack} className="text-sm text-gray-500 hover:underline">Back</button>
-        <div className="h-8 w-8 rounded-full" style={{ background: color }} />
+      <div className="flex items-center gap-4 mb-6">
+        <button onClick={onBack} className="text-sm underline opacity-70 hover:opacity-100">Back</button>
+        <div className="h-9 w-9 rounded-full ring-2" style={{ background: color }} />
         <div>
           <div className="text-xl font-semibold">{client.display_name}</div>
           <div className="text-xs text-gray-500">Personalized portal</div>
@@ -146,27 +178,36 @@ function ClientPortal({ me, client, onBack }) {
 
       <div className="flex gap-2 mb-4">
         {['chat','documents','invoices','work','quotes'].map(t => (
-          <button key={t} onClick={() => setTab(t)} className={`px-3 py-1 rounded-full border ${tab===t ? 'bg-gray-900 text-white' : 'bg-white'}`}>{t}</button>
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={`px-3 py-1 rounded-full border transition`}
+            style={{
+              background: tab===t ? 'var(--brand)' : 'rgba(255,255,255,0.85)',
+              color: tab===t ? 'var(--textOnBrand)' : '#111827',
+              borderColor: 'rgba(0,0,0,0.08)'
+            }}
+          >{t}</button>
         ))}
       </div>
 
       {tab==='chat' && (
         <div className="grid md:grid-cols-3 gap-6">
-          <div className="md:col-span-2 bg-white border rounded-lg p-4 h-[420px] flex flex-col">
+          <div className="md:col-span-2 rounded-lg p-4 h-[420px] flex flex-col border" style={{background:'rgba(255,255,255,0.9)'}}>
             <div className="flex-1 overflow-auto space-y-2">
               {messages.data?.map(m => (
                 <div key={m.id} className={`max-w-[80%] ${m.sender_id===me.id ? 'ml-auto text-right' : ''}`}>
-                  <div className={`inline-block px-3 py-2 rounded-lg ${m.sender_id===me.id ? 'bg-blue-600 text-white' : 'bg-gray-100'}`}>{m.content}</div>
+                  <div className="inline-block px-3 py-2 rounded-lg" style={{background: m.sender_id===me.id ? 'var(--brand)' : '#f1f5f9', color: m.sender_id===me.id ? 'var(--textOnBrand)' : '#0f172a'}}>{m.content}</div>
                   <div className="text-[10px] text-gray-400">{new Date(m.created_at).toLocaleString()}</div>
                 </div>
               ))}
             </div>
             <form onSubmit={send} className="flex gap-2 pt-2">
               <input value={message} onChange={e=>setMessage(e.target.value)} className="flex-1 border rounded px-3" placeholder="Type a message" />
-              <button className="px-4 bg-blue-600 text-white rounded">Send</button>
+              <button className="px-4 text-white rounded" style={{background:'var(--brand)'}}>Send</button>
             </form>
           </div>
-          <div className="bg-white border rounded-lg p-4">
+          <div className="rounded-lg p-4 border" style={{background:'rgba(255,255,255,0.9)'}}>
             <h3 className="font-medium mb-2">Notifications</h3>
             <Notifications userId={me.id} />
           </div>
@@ -175,29 +216,29 @@ function ClientPortal({ me, client, onBack }) {
 
       {tab==='documents' && (
         <div className="grid md:grid-cols-3 gap-6">
-          <div className="md:col-span-2 bg-white border rounded-lg p-4">
+          <div className="md:col-span-2 rounded-lg p-4 border" style={{background:'rgba(255,255,255,0.9)'}}>
             <h3 className="font-medium mb-3">Files</h3>
             <ul className="space-y-2">
               {docs.data?.map(d => (
                 <li key={d.id} className="flex items-center justify-between border rounded px-3 py-2">
-                  <a href={d.url} target="_blank" className="text-blue-600 underline">{d.filename}</a>
+                  <a href={d.url} target="_blank" className="underline" style={{color:'var(--brand)'}}>{d.filename}</a>
                   <span className="text-xs text-gray-500">{d.kind}</span>
                 </li>
               ))}
             </ul>
           </div>
-          <form onSubmit={addDoc} className="bg-white border rounded-lg p-4 space-y-2">
+          <form onSubmit={addDoc} className="rounded-lg p-4 space-y-2 border" style={{background:'rgba(255,255,255,0.9)'}}>
             <h3 className="font-medium">Add File (URL)</h3>
             <input name="filename" className="w-full border rounded px-3 py-2" placeholder="Filename" />
             <input name="url" className="w-full border rounded px-3 py-2" placeholder="https://..." />
-            <button className="w-full bg-gray-900 text-white rounded py-2">Upload</button>
+            <button className="w-full text-white rounded py-2" style={{background:'var(--brand)'}}>Upload</button>
           </form>
         </div>
       )}
 
       {tab==='invoices' && (
         <div className="grid md:grid-cols-3 gap-6">
-          <div className="md:col-span-2 bg-white border rounded-lg p-4">
+          <div className="md:col-span-2 rounded-lg p-4 border" style={{background:'rgba(255,255,255,0.9)'}}>
             <h3 className="font-medium mb-3">Invoices</h3>
             <ul className="space-y-2">
               {invoices.data?.map(i => (
@@ -206,7 +247,7 @@ function ClientPortal({ me, client, onBack }) {
                     <div className="font-medium">{i.number}</div>
                     <div className="text-xs text-gray-500">${i.amount.toFixed(2)} · {i.status}</div>
                   </div>
-                  {i.url && <a href={i.url} target="_blank" className="text-blue-600 underline">PDF</a>}
+                  {i.url && <a href={i.url} target="_blank" className="underline" style={{color:'var(--brand)'}}>PDF</a>}
                 </li>
               ))}
             </ul>
@@ -217,30 +258,30 @@ function ClientPortal({ me, client, onBack }) {
 
       {tab==='work' && (
         <div className="grid md:grid-cols-3 gap-6">
-          <div className="md:col-span-2 bg-white border rounded-lg p-4">
+          <div className="md:col-span-2 rounded-lg p-4 border" style={{background:'rgba(255,255,255,0.9)'}}>
             <h3 className="font-medium mb-3">Requests</h3>
             <ul className="space-y-2">
               {work.data?.map(w => (
                 <li key={w.id} className="border rounded px-3 py-2">
                   <div className="font-medium">{w.title}</div>
                   <div className="text-sm text-gray-600">{w.description}</div>
-                  <div className="text-xs text-gray-500">{w.status}</div>
+                  <div className="text-xs" style={{color:'var(--brand)'}}>{w.status}</div>
                 </li>
               ))}
             </ul>
           </div>
-          <form onSubmit={submitWork} className="bg-white border rounded-lg p-4 space-y-2">
+          <form onSubmit={submitWork} className="rounded-lg p-4 space-y-2 border" style={{background:'rgba(255,255,255,0.9)'}}>
             <h3 className="font-medium">New Work Request</h3>
             <input name="title" className="w-full border rounded px-3 py-2" placeholder="Title" />
             <textarea name="description" className="w-full border rounded px-3 py-2" placeholder="Describe the work" />
-            <button className="w-full bg-gray-900 text-white rounded py-2">Submit</button>
+            <button className="w-full text-white rounded py-2" style={{background:'var(--brand)'}}>Submit</button>
           </form>
         </div>
       )}
 
       {tab==='quotes' && (
         <div className="grid md:grid-cols-2 gap-6">
-          <div className="bg-white border rounded-lg p-4">
+          <div className="rounded-lg p-4 border" style={{background:'rgba(255,255,255,0.9)'}}>
             <h3 className="font-medium mb-3">Quotes</h3>
             <ul className="space-y-2">
               {quotes.data?.map(q => (
@@ -249,7 +290,7 @@ function ClientPortal({ me, client, onBack }) {
                     <div className="font-medium">${q.amount.toFixed(2)}</div>
                     <div className="text-xs text-gray-500">{q.status}</div>
                   </div>
-                  {q.status==='pending' && <button onClick={()=>authorizeQuote(q.id)} className="px-3 py-1 rounded bg-emerald-600 text-white">Authorize</button>}
+                  {q.status==='pending' && <button onClick={()=>authorizeQuote(q.id)} className="px-3 py-1 rounded text-white" style={{background:'var(--brand)'}}>Authorize</button>}
                 </li>
               ))}
             </ul>
@@ -275,12 +316,12 @@ function InvoiceForm({ client, onDone }) {
     onDone && onDone()
   }
   return (
-    <form onSubmit={submit} className="bg-white border rounded-lg p-4 space-y-2">
+    <form onSubmit={submit} className="rounded-lg p-4 space-y-2 border" style={{background:'rgba(255,255,255,0.9)'}}>
       <h3 className="font-medium">Add Invoice</h3>
       <input name="number" className="w-full border rounded px-3 py-2" placeholder="INV-001" />
       <input name="amount" type="number" step="0.01" className="w-full border rounded px-3 py-2" placeholder="Amount" />
       <input name="url" className="w-full border rounded px-3 py-2" placeholder="PDF URL (optional)" />
-      <button className="w-full bg-gray-900 text-white rounded py-2">Save</button>
+      <button className="w-full text-white rounded py-2" style={{background:'var(--brand)'}}>Save</button>
     </form>
   )
 }
@@ -298,13 +339,13 @@ function QuoteForm({ client, onDone, workList }) {
     onDone && onDone()
   }
   return (
-    <form onSubmit={submit} className="bg-white border rounded-lg p-4 space-y-2">
+    <form onSubmit={submit} className="rounded-lg p-4 space-y-2 border" style={{background:'rgba(255,255,255,0.9)'}}>
       <h3 className="font-medium">Create Quote</h3>
       <select name="work" className="w-full border rounded px-3 py-2">
         {workList.map(w => <option key={w.id} value={w.id}>{w.title}</option>)}
       </select>
       <input name="amount" type="number" step="0.01" className="w-full border rounded px-3 py-2" placeholder="Amount" />
-      <button className="w-full bg-gray-900 text-white rounded py-2">Create</button>
+      <button className="w-full text-white rounded py-2" style={{background:'var(--brand)'}}>Create</button>
     </form>
   )
 }
@@ -340,13 +381,20 @@ export default function App() {
   })
   const [activeClient, setActiveClient] = useState(null)
 
+  // Apply global theme on first load (electrician-nottingham style)
+  useEffect(() => {
+    if (!activeClient) applyTheme(getTheme(null))
+  }, [activeClient])
+
   useEffect(() => {
     if (session) localStorage.setItem('session', JSON.stringify(session))
   }, [session])
 
   if (!session) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 flex items-center justify-center p-6">
+      <div className="min-h-screen flex items-center justify-center p-6" style={{
+        background: 'radial-gradient(1200px 600px at 10% -10%, rgba(250,204,21,0.10), transparent), radial-gradient(1000px 500px at 110% 10%, rgba(250,204,21,0.06), transparent), linear-gradient(180deg, var(--brand800, #0f172a), var(--brand900, #0b1220))'
+      }}>
         <Login onLogin={setSession} />
       </div>
     )
@@ -355,22 +403,36 @@ export default function App() {
   const me = session.user && { ...session.user, id: session.user.id || session.user._id }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="border-b bg-white">
-        <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
-          <div className="font-semibold">Client Portal</div>
+    <div className="min-h-screen" style={{
+      background: 'radial-gradient(1200px 600px at -10% -10%, rgba(250,204,21,0.08), transparent), radial-gradient(1000px 500px at 120% 0%, rgba(250,204,21,0.05), transparent), linear-gradient(180deg, var(--brand800, #0f172a), var(--brand900, #0b1220))'
+    }}>
+      <header className="border-b/0" style={{background:'rgba(15,23,42,0.7)', backdropFilter:'saturate(140%) blur(8px)'}}>
+        <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
+          <div className="font-semibold text-white tracking-wide flex items-center gap-3">
+            <span className="inline-block h-6 w-6 rounded-sm" style={{background:'var(--brand)'}} />
+            <span>Electrician Nottingham Client Portal</span>
+          </div>
           <div className="flex items-center gap-3">
-            <span className="text-sm text-gray-600">{me?.name}</span>
-            <button className="text-xs underline" onClick={()=>{localStorage.removeItem('session'); setSession(null)}}>Sign out</button>
+            <span className="text-sm text-gray-200">{me?.name}</span>
+            <button className="text-xs underline text-gray-300 hover:text-white" onClick={()=>{localStorage.removeItem('session'); setSession(null)}}>Sign out</button>
           </div>
         </div>
+        <div className="h-1 w-full" style={{background:'linear-gradient(90deg, var(--brand), transparent)'}} />
       </header>
 
-      <main className="max-w-6xl mx-auto px-4 py-6">
+      <main className="max-w-6xl mx-auto px-4 py-6 text-slate-100">
         {!activeClient ? (
-          <ClientsList onOpen={setActiveClient} />
+          <div className="space-y-6">
+            <section className="rounded-xl border p-6" style={{background:'rgba(15,23,42,0.6)', borderColor:'rgba(255,255,255,0.06)'}}>
+              <h2 className="text-2xl font-semibold mb-2">Clients</h2>
+              <p className="text-sm text-slate-300 mb-4">Select a client to open their personalised portal. Colours and branding adapt automatically.</p>
+              <ClientsList onOpen={setActiveClient} />
+            </section>
+          </div>
         ) : (
-          <ClientPortal me={me} client={activeClient} onBack={() => setActiveClient(null)} />
+          <section className="rounded-xl border p-6" style={{background:'rgba(15,23,42,0.6)', borderColor:'rgba(255,255,255,0.06)'}}>
+            <ClientPortal me={me} client={activeClient} onBack={() => setActiveClient(null)} />
+          </section>
         )}
       </main>
     </div>
